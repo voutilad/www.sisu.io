@@ -1,0 +1,25 @@
+#+SETUPFILE: ../templates/level-0.org
+#+TITLE: So it goes...
+#+OPTIONS: H:3 num:nil toc:t \n:nil ::t |:t ^:t -:t f:t *:t tex:t d:(HIDE) tags:not-in-toc
+
+* Latest...
+** Latest posts
+** Nice right?
+
+#+NAME: Just some python
+#+BEGIN_SRC python
+  import sys
+
+  def junk():
+      return [1, 2, 3]
+
+  print("sup dawg")
+#+END_SRC
+
+
+* Cool!
+
+| Name | Age | Favorite | Not Fave | Ok? |
+|------+-----+----------+----------+-----|
+| Dave |  90 |          | false    | yes |
+| Dan  |  88 | Beef     | tuna     |     |
