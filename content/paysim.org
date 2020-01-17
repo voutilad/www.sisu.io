@@ -1,0 +1,182 @@
+#+TITLE: Exploring Mobile Money Fraud with Neo4j
+#+DATE: 2020-01-14T1516+0500
+#+TAGS: neo4j, fraud, java, clojure
+
+Fraud detection and investigation presents one of the most popular use
+cases for graph databases, at least in the financial services
+industry...or any industry folks are incentivized to masque or hide
+certain nefarious behavior. But for those not employed directly by a
+bank or insurance firm, it can be hard to study or experiment with
+realistic data.
+
+Turns out a lack of publicly available datasets is a real problem for
+academics and the like looking to test machine learning or heuristic
+approaches to fraud.
+
+PaySim [TKTK] looks to change that, at least for mobile money network
+providers.
+
+Lopez-Rojas, Elmire, and Axelsson [] published a solution to take an
+agent-based model [], some anonymized aggregate transactional data
+from a real mobile money network operator, and create a means of
+generating "similar" totally anonymous data programatically.
+
+But how realistic is it? What types of behavior does it generate? This
+post will explore using graph-based techniques using Neo4j to
+visualize and analyze the results of a simulation and present some
+lessons learned along the way. My hope is you may learn a bit about
+agent-based simulations, mobile money networks, some types of fraud,
+and how to apply graph approaches to making sense of (simulated) human
+behavior.
+
+* A Mobile Money Primer
+
+* Improving PaySim
+PaySim is provided as a Java application built upon the MASON agent
+simulation framework. It's got a few shortcomings we need to overcome
+before we can build our graph:
+
+1. It expects to write out simulation results as csv files
+2. Transactions contain some bare bones data, with some critical
+   aspects inferred based on things like client/agent names.
+
+Ultimately, embedding or orchestrating PaySim programmatically poses
+some problems.
+
+** Gutting MASON
+First is MASON...it's a complete kitchen and we only need maybe a
+knife and cutting board. Part of MASON includes gui components for
+visualizing all sorts of agent simulations it supports.
+
+When in doubt, cut it out.
+
+I've forked MASON, gutted the parts we don't need, and hosted it here:
+[]
+
+** Making PaySim more of an API
+Next up is fixing PaySim's desire to only output to the file system
+and only certain transaction details.
+
+I've forked PaySim and implemented the following:
+- Adding explicit agent types to transactions making it easier to
+  determine if the sender/receiver is a client, bank, etc.
+- Abstracted out the base simulation logic from the orchestration, so
+  the original PaySim can be run writing out to disk, but developers
+  can implement alternative implementations.
+- Implemented an iterating version of PaySim, allowing an application
+  embedding PaySim to drive the simulation at its own pace and consume
+  data on the fly.
+
+* Populating the Graph
+So we've got a simulator...a black box that generates data given some
+seed parameters...but we now want it to feed directly into a graph
+like Neo4j. What do we do?
+
+** Modeling PaySim in Neo4j
+Our model is pretty simple and derived entirely from what data PaySim
+emits during a simulation.
+
+[graph data model]
+
+*** Agent Types
+Agents take a variety of forms:
+
+- *Clients* are end users in the money network, mapping effectively to
+  someone or someone's phone
+- *Merchants* are businesses that conduct transactions with clients...
+- *Banks* are...banks.
+
+*** Transaction Types
+
+- *CashIn*
+- *CashOut*
+- *Debit*
+- *Transfer*
+- *Payment*
+
+** From PaySim Transaction to Nodes and Relationships
+With our improved version of PaySim and data model, we now need to put
+the model into practice. For that, I chose my go-to data processing
+language of choice: Clojure.
+
+Yes, it's a LISP, but even if you abhor parens the logic should be
+pretty clear.
+
+...initialize some database schema constraints
+...drive paysim
+...transducer converts paysim transactions to hashmaps, dropping any
+garbage input, and batching results
+...batches of data converted into cypher queries
+...and batch loaded via transaction functions via bolt
+...lastly, we use cypher & apoc to thread transactions into chains
+
+
+*** Our Cypher for loading Transactions
+For each transaction, we're simply going to rely on MERGE statements
+to update sender and receiver nodes while we CREATE new transactions
+and relationships. Since each transaction is unique, we don't need to
+worry about collisions and can avoid MERGE calls.
+
+#+BEGIN_SRC cypher
+
+#+END_SRC
+
+*** Optimizing Load Performance
+To increase load performance, batches of queries are run in a single
+TransactionWork instance, reducing the frequency of database commits.
+
+In Clojure, this means using reify[] to define an implementation of
+the TransactionWork interface that operates on a sequence of one or
+many queries.
+
+#+BEGIN_SRC clojure
+  (defn multi-query-txn
+    "Run multiple queries in a single unit of TransactionWork"
+    [query & queries]
+    (reify TransactionWork
+      (execute [this txn]
+        (doseq [q (cons query queries)]
+          (.run txn q)))))
+#+END_SRC
+
+Executing the batches requires only using a single call to
+Session.writeTransaction().
+
+*** Threading our Transactions
+One of the challenges with the original PaySim is it doesn't provide a
+real clock or timestamps on transactions. However, if we assume that
+the simulation is effectively single threaded and also that each agent
+acts in an orderly fashion per step, we can create a sort of global
+step counter and use that to sequence our transactions.
+
+As a result, I went back and extended the IteratingPaySim
+implementation to lean (heavily) on this assumption that so far seems
+to hold true under repeat testing.
+
+To thread transactions in Neo4j, we can use some Cypher that iterates
+through batches of clients, leverage some nice functions from APOC to
+simplify pairing up transactions, and simply merge new relationships
+connecting them in order of the global step counter.
+
+#+BEGIN_SRC cypher
+// We're parameterizing via batches of data defined as "rows"
+UNWIND $rows AS row
+  // Find a client's list of transactions
+  MATCH (c:Client {name: row.name})-[:PERFORMED]->(tx:Transaction)-[:TO]-() WHERE NOT (c)-[:FIRST_TX]->()
+  WITH c, collect(tx) AS txs
+  // TODO: WHY YOU NO GLOBAL STEP ORDER?!?
+  WITH c, txs, head(txs) AS _start, last(txs) AS _last
+
+  // Create relationships to point ot the first and last
+  MERGE (c)-[:FIRST_TX]->(_start)
+  MERGE (c)-[:LAST_TX]->(_last)
+
+  // Use a handy APOC function to construct ordered pairs of transactions
+  WITH c, apoc.coll.pairsMin(txs) AS pairs
+
+  // For each pair, we merge a relationship :NEXT that chains them
+  UNWIND pairs AS pair
+    WITH pair[0] AS a, pair[1] AS b
+    MERGE (a)-[n:NEXT]->(b)
+    RETURN COUNT(n)
+#+END_SRC
