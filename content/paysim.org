@@ -1,6 +1,7 @@
 #+TITLE: Exploring Mobile Money Fraud with Neo4j
 #+DATE: 2020-01-14T1516+0500
-#+TAGS: neo4j, fraud, java, clojure
+#+KEYWORDS: neo4j, fraud, java, clojure
+#+OPTIONS: toc:2
 
 Fraud detection and investigation presents one of the most popular use
 cases for graph databases, at least in the financial services
@@ -87,12 +88,27 @@ Agents take a variety of forms:
 - *Banks* are...banks.
 
 *** Transaction Types
+There are five (5) primary types of transactions a Client can
+perform. Each transaction requires a second agent (of any type) and
+results in what should be a zero-sum exchanges of money for Clients
+(but not Merchants and Banks). Money, like energy, is conserved in an
+isolated system.
 
-- *CashIn*
-- *CashOut*
-- *Debit*
-- *Transfer*
-- *Payment*
+#+CAPTION: Table of Transaction Types
+| Transaction | Description                                            |
+|-------------+--------------------------------------------------------|
+| CashIn      | A Client moves money into the network via a Merchant   |
+| CashOut     | A Client moves money out of the network via a Merchant |
+| Debit       | A Client moves money into a Bank                       |
+| Transfer    | A Client sends money to another Client                 |
+| Payment     | A Client exchanges money for something from a Merchant |
+|-------------+--------------------------------------------------------|
+
+
+- ~CashOut~
+- ~Debit~
+- ~Transfer~
+- ~Payment~
 
 ** From PaySim Transaction to Nodes and Relationships
 With our improved version of PaySim and data model, we now need to put
