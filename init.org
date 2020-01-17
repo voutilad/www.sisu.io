@@ -2,7 +2,7 @@
 
 * Styling and Pizazz
 
-#+BEGIN_SRC elisp
+#+BEGIN_SRC elisp :results output silent
   ;; see https://emacs.stackexchange.com/a/7633
   (setq org-html-htmlize-output-type 'css)
   (setq org-html-htmlize-font-prefix "org-")
@@ -10,7 +10,7 @@
 
 * Configuring org-publish
 
-#+BEGIN_SRC elisp
+#+BEGIN_SRC elisp :results output silent
   (require 'ox-publish)
 
   (defvar-local content-dir (expand-file-name "content" default-directory))
@@ -26,6 +26,7 @@
            :publishing-function org-html-publish-to-html
            :headline-levels 4
            :auto-preamble t
+           :auto-sitemap t
            :html-doctype "html5"
            :html-html5-fancy t)
           ("sisu-static"
