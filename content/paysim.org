@@ -1,4 +1,5 @@
-#+TITLE: Exploring Mobile Money Fraud with Neo4j
+#+SETUPFILE: ../templates/level-0.org
+#+TITLE: Exploring Mobile Money Fraud with Neo4j (Part 1)
 #+DATE: 2020-01-14T1516+0500
 #+KEYWORDS: neo4j, fraud, java, clojure
 #+OPTIONS: toc:2
@@ -10,63 +11,91 @@ certain nefarious behavior. But for those not employed directly by a
 bank or insurance firm, it can be hard to study or experiment with
 realistic data.
 
-Turns out a lack of publicly available datasets is a real problem for
-academics and the like looking to test machine learning or heuristic
-approaches to fraud.
+Turns out _a lack of publicly available datasets is a real problem for
+academics_ looking to test machine learning or heuristic approaches to
+fraud.
 
-PaySim [TKTK] looks to change that, at least for mobile money network
+PaySim looks to change that, at least for mobile money network
 providers.
 
-Lopez-Rojas, Elmire, and Axelsson [] published a solution to take an
-agent-based model [], some anonymized aggregate transactional data
+Lopez-Rojas, Elmire, and Axelsson [fn:1] published a solution to take
+an agent-based model, some anonymized aggregate transactional data
 from a real mobile money network operator, and create a means of
 generating "similar" totally anonymous data programatically.
 
-But how realistic is it? What types of behavior does it generate? This
-post will explore using graph-based techniques using Neo4j to
-visualize and analyze the results of a simulation and present some
-lessons learned along the way. My hope is you may learn a bit about
-agent-based simulations, mobile money networks, some types of fraud,
-and how to apply graph approaches to making sense of (simulated) human
-behavior.
+*But how realistic is it? What types of behavior does it generate?*
+
+This post will explore how I went about integrating PaySim with Neo4j
+to build a graph encapsulating the mobile money network, fraud and
+all.
+
+Subsequent posts will explore the data and any modifications I make
+along the way.
 
 * A Mobile Money Primer
+Mobile money takes different forms, but in the case of PaySim it
+involves both Banks and participating Merchants. If I understand
+correctly, Merchants can take mobile payments via the network (for
+goods/services) as well as perform the function of putting money into
+the network (e.g. "topping up" an account).
 
-* Improving PaySim
+The mobile money network used by the PaySim authors comes from an
+undisclosed African country, which leads me to believe it's of the
+sort similar to M-Pesa: https://en.wikipedia.org/wiki/M-Pesa
+
+From the above Wikipedia page:
+
+#+BEGIN_QUOTE
+M-Pesa is a branchless banking service; M-Pesa customers can deposit
+and withdraw money from a network of agents that includes airtime
+resellers and retail outlets acting as banking agents.
+#+END_QUOTE
+
+
+* Making PaySim Play Nice
 PaySim is provided as a Java application built upon the MASON agent
 simulation framework. It's got a few shortcomings we need to overcome
-before we can build our graph:
+before we can easily build our graph:
 
-1. It expects to write out simulation results as csv files
+1. It expects to write out simulation results as CSV files
 2. Transactions contain some bare bones data, with some critical
    aspects inferred based on things like client/agent names.
 
-Ultimately, embedding or orchestrating PaySim programmatically poses
-some problems.
+I want more of a turn-key experience, so there's some work required to
+simplify things.
 
 ** Gutting MASON
-First is MASON...it's a complete kitchen and we only need maybe a
+First is MASON[fn:2]...it's a complete kitchen and we only need maybe a
 knife and cutting board. Part of MASON includes gui components for
-visualizing all sorts of agent simulations it supports.
+visualizing all sorts of agent simulations it supports, which is cool,
+but we don't need them.
 
-When in doubt, cut it out.
+/When in doubt, cut it out./
 
-I've forked MASON, gutted the parts we don't need, and hosted it here:
-[]
+I've forked MASON, provided predominantly under the "Academic Free
+License"[fn:3], and hosted it at: https://github.com/voutilad/mason
+
+I've also cleaned up some Maven warnings.
 
 ** Making PaySim more of an API
 Next up is fixing PaySim's desire to only output to the file system
-and only certain transaction details.
+and only record certain transaction details.
 
 I've forked PaySim and implemented the following:
+
 - Adding explicit agent types to transactions making it easier to
-  determine if the sender/receiver is a client, bank, etc.
+  determine if the sender/receiver is a Client, Bank, or Merchant.
+
 - Abstracted out the base simulation logic from the orchestration, so
   the original PaySim can be run writing out to disk, but developers
-  can implement alternative implementations.
+  can implement alternative implementations doing whatever they want.
+
 - Implemented an iterating version of PaySim, allowing an application
   embedding PaySim to drive the simulation at its own pace and consume
   data on the fly.
+
+PaySim is provided under the GPLv3 and my fork is available at
+https://github.com/voutilad/PaySim.
 
 * Populating the Graph
 So we've got a simulator...a black box that generates data given some
@@ -77,7 +106,10 @@ like Neo4j. What do we do?
 Our model is pretty simple and derived entirely from what data PaySim
 emits during a simulation.
 
-[graph data model]
+#+CAPTION: Graphical representation of the PaySim data model
+#+NAME: fig:data-model
+[[../static/simplified-data-model.png]]
+
 
 *** Agent Types
 Agents take a variety of forms:
@@ -89,10 +121,10 @@ Agents take a variety of forms:
 
 *** Transaction Types
 There are five (5) primary types of transactions a Client can
-perform. Each transaction requires a second agent (of any type) and
-results in what should be a zero-sum exchanges of money for Clients
-(but not Merchants and Banks). Money, like energy, is conserved in an
-isolated system.
+perform. Each transaction requires a second agent (of any type). Only
+Transfers between Clients require proper double-entry bookkeeping
+where there's a zero-sum...implying money is allowed to enter or exit
+the network via Banks and Merchants.
 
 #+CAPTION: Table of Transaction Types
 | Transaction | Description                                            |
@@ -104,46 +136,52 @@ isolated system.
 | Payment     | A Client exchanges money for something from a Merchant |
 |-------------+--------------------------------------------------------|
 
-
-- ~CashOut~
-- ~Debit~
-- ~Transfer~
-- ~Payment~
-
-** From PaySim Transaction to Nodes and Relationships
+** From PaySim Transactions to Nodes and Relationships
 With our improved version of PaySim and data model, we now need to put
-the model into practice. For that, I chose my go-to data processing
-language of choice: Clojure.
+the model into practice. For that, I chose my go-to data hacking
+language of choice: *Clojure*.
 
 Yes, it's a LISP, but even if you abhor parens the logic should be
-pretty clear.
+pretty clear:
 
-...initialize some database schema constraints
-...drive paysim
-...transducer converts paysim transactions to hashmaps, dropping any
-garbage input, and batching results
-...batches of data converted into cypher queries
-...and batch loaded via transaction functions via bolt
-...lastly, we use cypher & apoc to thread transactions into chains
+0. Connect to a target Neo4j database
+1. Initialize some database schema constraints
+2. Fire up a PaySim simulation and start consuming transactions
+3. Transduce transactions to Clojure maps, while dropping any garbage
+   input, and batching results
+4. Converted result batches into many Cypher queries
+5. Take the query batches and execute via transaction functions over a
+   Bolt connection to the database. (This minimizes the number of
+   commits improving load throughput.)
+6. Lastly, we use Cypher and APOC to thread transactions into event
+   chains.
 
-
-*** Our Cypher for loading Transactions
-For each transaction, we're simply going to rely on MERGE statements
-to update sender and receiver nodes while we CREATE new transactions
+*** Cypher for loading Transactions
+For each transaction, we're simply going to rely on =MERGE= statements
+to update sender and receiver nodes while we =CREATE= new transactions
 and relationships. Since each transaction is unique, we don't need to
 worry about collisions and can avoid MERGE calls.
 
-#+BEGIN_SRC cypher
+As an example, here's how we record a Transfer between Clients:
 
+#+BEGIN_SRC cypher
+MERGE (s:Client { name: $senderName })
+MERGE (r:Client { name: $receiverName })
+CREATE (tx:Transaction:Transfer { id: $txId })
+SET tx.ts = $ts, tx.amount = $amount, tx.fraud = $fraud,
+    tx.step = $step, tx.globalStep = $globalStep
+CREATE (s)-[:PERFORMED]->(tx)
+CREATE (tx)-[:TO]->(r)
 #+END_SRC
 
 *** Optimizing Load Performance
 To increase load performance, batches of queries are run in a single
-TransactionWork instance, reducing the frequency of database commits.
+=TransactionWork=[fn:4] instance, reducing the frequency of database
+commits.
 
-In Clojure, this means using reify[] to define an implementation of
-the TransactionWork interface that operates on a sequence of one or
-many queries.
+In Clojure, this means using =reify=[fn:5] to define an implementation
+of the =TransactionWork= interface that operates on a sequence of one
+or many queries.
 
 #+BEGIN_SRC clojure
   (defn multi-query-txn
@@ -155,22 +193,25 @@ many queries.
           (.run txn q)))))
 #+END_SRC
 
-Executing the batches requires only using a single call to
-Session.writeTransaction().
+Executing the batches requires only using a single call to a
+=Session='s =writeTransaction= method.
 
 *** Threading our Transactions
 One of the challenges with the original PaySim is it doesn't provide a
-real clock or timestamps on transactions. However, if we assume that
-the simulation is effectively single threaded and also that each agent
-acts in an orderly fashion per step, we can create a sort of global
-step counter and use that to sequence our transactions.
+real clock or timestamps on transactions. However, if we assume that:
 
-As a result, I went back and extended the IteratingPaySim
-implementation to lean (heavily) on this assumption that so far seems
-to hold true under repeat testing.
+- the simulation is effectively single threaded and
+- each agent acts in an orderly fashion per step...
+
+We can create a sort of global step counter and use that to sequence
+our transactions.
+
+As a result, I went back and extended the =IteratingPaySim=
+implementation to use this assumption that, so far, seems to hold true
+under repeat testing.
 
 To thread transactions in Neo4j, we can use some Cypher that iterates
-through batches of clients, leverage some nice functions from APOC to
+through batches of clients, leverage a nice function[fn:6] from APOC to
 simplify pairing up transactions, and simply merge new relationships
 connecting them in order of the global step counter.
 
@@ -196,3 +237,17 @@ UNWIND $rows AS row
     MERGE (a)-[n:NEXT]->(b)
     RETURN COUNT(n)
 #+END_SRC
+
+* Footnotes
+
+[fn:1] https://www.researchgate.net/publication/313138956_PAYSIM_A_FINANCIAL_MOBILE_MONEY_SIMULATOR_FOR_FRAUD_DETECTION
+
+[fn:2] https://cs.gmu.edu/~eclab/projects/mason/
+
+[fn:3] https://github.com/eclab/mason/blob/master/LICENSE
+
+[fn:4] https://github.com/neo4j/neo4j-java-driver/blob/4.0/driver/src/main/java/org/neo4j/driver/TransactionWork.java
+
+[fn:5] https://clojuredocs.org/clojure.core/reify
+
+[fn:6] https://neo4j-contrib.github.io/neo4j-apoc-procedures/3.5/utilities/collection-list-functions/
