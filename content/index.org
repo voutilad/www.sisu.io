@@ -1,25 +1,31 @@
 #+SETUPFILE: ../templates/level-0.org
 #+TITLE: So it goes...
-#+OPTIONS: H:3 num:nil toc:t \n:nil ::t |:t ^:t -:t f:t *:t tex:t d:(HIDE) tags:not-in-toc
+#+CATEGORY: main
+#+OPTIONS: H:3 num:nil toc:nil \n:nil ::t |:t ^:t -:t f:t *:t tex:t d:(HIDE) tags:not-in-toc
 
-* Latest...
-** Latest posts
-** Nice right?
-
-#+NAME: Just some python
-#+BEGIN_SRC python
-  import sys
-
-  def junk():
-      return [1, 2, 3]
-
-  print("sup dawg")
-#+END_SRC
+* Blog Posts
+** [[file:./paysim.org][PaySim Part 1]]: /Exploring Mobile Money Fraud with Neo4j/
 
 
-* Cool!
+* Projects
+Most of my current code/configs are in [[https://github.com/voutilad][my Github]] at the moment, but
+here are some highlights.
 
-| Name | Age | Favorite | Not Fave | Ok? |
-|------+-----+----------+----------+-----|
-| Dave |  90 |          | false    | yes |
-| Dan  |  88 | Beef     | tuna     |     |
+** /An HAProxy config for single-server Neo4j/
+Need to tunnel http to Neo4j Browser AND Bolt (both plain and
+websocket based) connections over the same TLS-enabled port?
+
+=haproxy.cfg=:
+https://github.com/voutilad/haproxy-and-neo4j/blob/master/haproxy.cfg
+
+Bonus "LetsEncrypt" script for automating certbot:
+https://github.com/voutilad/haproxy-and-neo4j/blob/master/letsencrypt.sh
+
+Tested and works in recent (19.x) Ubuntu environments.
+
+** =virtio_vmmci=
+My 3/4-hearted attempt at a Linux virtio driver for OpenBSD VMM
+Control Interface. Handles some guest/host communication related to
+clock sync and host shutdown/restart events.
+
+Code: https://github.com/voutilad/virtio_vmmci

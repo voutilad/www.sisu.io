@@ -3,14 +3,10 @@
 #+options: html5-fancy:t tex:t
 #+html_doctype: html5
 #+html_container: div
-#+description: The musings and hacks of a Vermonter
-#+keywords: blog, programming, openbsd, linux, neo4j, emacs, clojure
 #+html_link_home: https://www.sisu.io
-#+html_link_up:
 #+html_mathjax:
 #+html_head: <link rel="stylesheet" type="text/css" href="css/worg.css"/>
 #+html_head_extra:
 #+subtitle:
-#+infojs_opt: path:js/org-info.js view:showall toc:t
 #+creator: <a href="https://www.gnu.org/software/emacs/">Emacs</a> 26.3 (<a href="https://orgmode.org">Org</a> mode 9.2.6)
 #+OPTIONS: html-style:nil
